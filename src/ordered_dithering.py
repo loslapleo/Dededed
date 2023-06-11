@@ -1,16 +1,12 @@
-from os import preadv
 from PIL import Image
-from colorthief import ColorThief
 import numpy as np
+import progress_bar
 
-PALETTE_SIZE = 6
-
-def apply_ordered_dithering(image_name:str, n:int):
-    image = np.array(Image.open(image_name))
-    palette = ColorThief(image_name).get_palette(color_count = PALETTE_SIZE)
+def apply(image_name:str, n:int = 4, nc:int = 8):
+    image_arr = np.array(Image.open(image_name), dtype = float) / 255
     tm = threshold_map(n)
-    new_image = Image.fromarray(ordered_dither(image, tm, n, palette), "RGB")
-    new_image.save("out/new_image.png")
+    new_image = Image.fromarray(ordered_dither(image_arr, tm, n, nc))
+    new_image.save("out/o_dithering.png")
 
 def threshold_map(n:int):
     if n == 1:
@@ -24,24 +20,18 @@ def threshold_map(n:int):
         c2 = np.concatenate((e2, e4), axis = 0)
         return (1 / n ** 2) * np.concatenate((c1, c2), axis = 1)
 
-def ordered_dither(image_arr:np.array, tm:np.array, n:int, palette):
+def ordered_dither(image_arr, tm, n:int, nc):
     x_max = np.size(image_arr, axis = 1)
     y_max = np.size(image_arr, axis = 0)
     for x in range(x_max):
         for y in range(y_max):
-            prev_col = image_arr[y][x]
-            image_arr[y][x] = get_nearest_colour(image_arr[y][x] + \
-                    255 / PALETTE_SIZE * (tm[x % n][y % n]) - 0.5, palette)
-            # print("%s -> %s (x:%d, y:%d)\r" % (prev_col, image_arr[y][x], x, y))
-    return image_arr
+            image_arr[y][x] = get_nearest_colour(image_arr[y][x].copy() + \
+                    nc * (tm[y % n][x % n] - 0.5), nc)
+        progress_bar.print_progress_bar(x, x_max, prefix = "Ordered        ", \
+                length = 64)
+    progress_bar.print_progress_bar(1, 1, prefix = "Ordered        ", length = 64)
+    carr = np.array(image_arr / np.max(image_arr, axis = (0,1)) * 255, dtype = np.uint8)
+    return carr
 
-def get_nearest_colour(color, palette):
-    """
-    Gets the nearest colour from color palette to apply to the image array.
-    """
-    palette = np.array(palette)
-    distances = np.sqrt(np.sum((palette - color) ** 2, axis = 0))
-    nearest_index = np.where(distances == np.amin(distances))
-    nearest_color = palette[nearest_index]
-    print("%s -> %s" % (color, nearest_color[0]))
-    return nearest_color
+def get_nearest_colour(pixel, nc):
+    return np.round(pixel * (nc - 1)) / (nc - 1)
